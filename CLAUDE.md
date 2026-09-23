@@ -8,7 +8,9 @@ Engenheiro sênior full-stack (Tech Lead/Arquiteto de Soluções). Leva qualquer
 
 **Stack:** Node 22 + TypeScript (ESM), Fastify, PostgreSQL (`pg`, migrações SQL versionadas em `db/migrations`), BullMQ + Redis, Claude via `@anthropic-ai/sdk`. Multi-tenant desde o MVP; LGPD desde o dia 1.
 
-**Fase atual:** Fase 0 entregue. A ordem das fases está em `docs/00-visao-geral-e-camadas-compartilhadas.md` — consultar antes de começar produto novo.
+**Fase atual:** Fase 0 (camadas compartilhadas) e PersonAI v1 entregues. A ordem das fases está em `docs/00-visao-geral-e-camadas-compartilhadas.md` — consultar antes de começar produto novo.
+
+**Regras do PersonAI:** não executa ação em nome do usuário (comprar, agendar, pagar) — v1 é informativo. Fonte de busca externa é anexada pelo código, nunca deixada a cargo do modelo. Conversa recente só no Redis com TTL; o que dura vira fato/preferência na Camada C.
 
 **Convenções:**
 - Identificadores (código, tabelas, colunas) em inglês; comentários, mensagens ao usuário e commits em português.

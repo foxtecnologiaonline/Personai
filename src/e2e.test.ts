@@ -11,6 +11,10 @@ import { PersonAiHandler } from "./handlers/personai.js";
 import { deriveUserRef } from "./identity.js";
 import { createLogger } from "./logger.js";
 import { PgMemoryRepository } from "./memory/repository.js";
+import type Anthropic from "@anthropic-ai/sdk";
+import { PersonAiAssistant } from "./personai/assistant.js";
+import { ProductApiRegistry } from "./personai/product-api.js";
+import { RedisConversationSession } from "./personai/session.js";
 import { createInboundQueue, createRedis, inboundJobOptions, type InboundJob } from "./queue/inbound.js";
 import { ClaudeIntentClassifier } from "./router/classifier.js";
 import { HandlerRegistry } from "./router/registry.js";
@@ -58,6 +62,20 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
   let worker: Worker<InboundJob>;
   let queueRedis: Redis;
   let workerRedis: Redis;
+  let sessionRedis: Redis;
+
+  const REPLY = "Oi! Como posso ajudar?";
+
+  // Modelo substituído: o que se testa aqui é o encanamento, não a geração.
+  const claudeStub = {
+    beta: {
+      messages: {
+        parse: async () => ({
+          parsed_output: { reply: REPLY, facts: ["gosta de café"], preferences: [] },
+        }),
+      },
+    },
+  } as unknown as Anthropic;
 
   const postWebhook = (payload: unknown) => {
     const raw = Buffer.from(JSON.stringify(payload));
@@ -106,13 +124,27 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
 
     queueRedis = createRedis(REDIS_URL!);
     workerRedis = createRedis(REDIS_URL!);
+    sessionRedis = createRedis(REDIS_URL!);
     queue = createInboundQueue(queueRedis);
+
+    const personai = new PersonAiHandler({
+      assistant: new PersonAiAssistant({
+        claude: claudeStub,
+        bedrock: null,
+        model: "claude-sonnet-5",
+        bedrockModel: "anthropic.claude-sonnet-5",
+        search: null,
+        logger,
+      }),
+      session: new RedisConversationSession(sessionRedis, { ttlSeconds: 60 }),
+      products: new ProductApiRegistry(),
+    });
 
     worker = createInboundWorker(
       { connection: workerRedis, concurrency: 2 },
       {
         pool,
-        registry: new HandlerRegistry().register(new PersonAiHandler()),
+        registry: new HandlerRegistry().register(personai),
         classifier: new ClaudeIntentClassifier({ client: null, model: "claude-sonnet-5", logger }),
         memory,
         sender,
@@ -141,6 +173,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
     await queue?.close();
     await queueRedis?.quit();
     await workerRedis?.quit();
+    await sessionRedis?.quit();
     await app?.close();
     await pool.query("DELETE FROM tenants WHERE id = $1", [tenantId]);
     await pool.end();
@@ -201,7 +234,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
     expect(response.json()).toMatchObject({ received: 1, queued: 1 });
 
     const reply = await waitFor(() => sent.find((item) => item.to === waId));
-    expect(reply.text).toContain("assistente geral");
+    expect(reply.text).toBe(REPLY);
 
     const log = await pool.query<{ status: string; product: string }>(
       "SELECT status, product FROM inbound_message_log WHERE message_id = $1",
@@ -209,9 +242,12 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
     );
     expect(log.rows[0]).toMatchObject({ status: "processed", product: "personai" });
 
-    const { interactions } = await memory.getContext(tenantId, userRef);
+    const { interactions, facts } = await memory.getContext(tenantId, userRef);
     expect(interactions[0]?.product).toBe("personai");
+    // O que o assistente julgou digno de lembrar foi para o Serviço de Memória.
+    expect(facts.map((fact) => fact.content)).toContain("gosta de café");
   });
+
 
   it("não responde duas vezes a mesma mensagem reentregue", { timeout: 20_000 }, async () => {
     const messageId = `wamid.${randomUUID()}`;

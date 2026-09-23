@@ -48,7 +48,7 @@ describe("ClaudeIntentClassifier", () => {
       parsed_output: { product: "sales-agent", confidence: 0.9, reason: "quer contratar" },
     }));
 
-    const result = await classifier(client).classify("me manda os valores de implantação");
+    const result = await classifier(client).classify("queria entender melhor como funciona aí");
     expect(result).toMatchObject({ product: "sales-agent", source: "llm", confidence: 0.9 });
   });
 

@@ -19,16 +19,30 @@ export interface IntentClassifier {
 const MIN_CONFIDENCE = 0.5;
 const MAX_INPUT_CHARS = 2000;
 
-const RULES: ReadonlyArray<{ product: ProductId; pattern: RegExp; reason: string }> = [
-  { product: "personai", pattern: /^\s*\/geral\b/i, reason: "comando de assistente geral" },
-  {
-    product: "personai",
-    pattern: /\b(apag\w*|exclu\w*|esque[cç]\w*)\s+(a\s+|as\s+)?(minha\s+|minhas\s+)?mem[óo]ria\b/i,
-    reason: "comando de exclusão de memória",
-  },
+/** Comando explícito de assistente geral. */
+export const GENERAL_COMMAND_PATTERN = /^\s*\/geral\b/i;
+
+/**
+ * Direito de esquecimento pedido em linguagem natural. A janela de 40 caracteres
+ * entre o verbo e o objeto cobre as variações ("apaga tudo o que você sabe sobre
+ * mim") sem atravessar frase.
+ */
+export const MEMORY_COMMAND_PATTERN =
+  /\b(apag\w*|exclu\w*|esque[cç]\w*|remov\w*)\b[^.?!]{0,40}\b(mem[óo]ria|dados|hist[óo]rico|prefer[êe]ncias?|tudo (o )?que voc[êe] sabe)\b/i;
+
+/**
+ * Tabela única de termos por produto: o roteador do gateway e o roteamento
+ * secundário do PersonAI leem daqui, para não divergirem com o tempo.
+ */
+const PRODUCT_RULES: ReadonlyArray<{
+  product: Exclude<ProductId, "personai">;
+  pattern: RegExp;
+  reason: string;
+}> = [
   {
     product: "monneyhub-zap",
-    pattern: /\b(saldo|extrato|fluxo de caixa|boleto|nota fiscal|faturamento|das|mei)\b/i,
+    pattern:
+      /\b(saldo|extrato|fluxo de caixa|boleto|nota fiscal|faturamento|das|mei|quanto (eu )?tenho|quanto (entrou|saiu)|conta banc\w*)\b/i,
     reason: "termo financeiro",
   },
   {
@@ -38,18 +52,34 @@ const RULES: ReadonlyArray<{ product: ProductId; pattern: RegExp; reason: string
   },
   {
     product: "sales-agent",
-    pattern: /\b(or[çc]amento|proposta|comprar|pre[çc]o|plano|contrat\w*|vend\w*)\b/i,
+    pattern:
+      /\b(or[çc]amento|proposta|comprar|pre[çc]o|plano|contrat\w*|vend\w*|quanto custa|valor d[ao]|implanta[çc][ãa]o)\b/i,
     reason: "intenção comercial",
   },
 ];
 
-export function classifyByRules(text: string): IntentClassification | null {
-  for (const rule of RULES) {
-    if (rule.pattern.test(text)) {
-      return { product: rule.product, confidence: 1, reason: rule.reason, source: "rule" };
-    }
+export function matchProductByRules(
+  text: string,
+): { product: Exclude<ProductId, "personai">; reason: string } | null {
+  for (const rule of PRODUCT_RULES) {
+    if (rule.pattern.test(text)) return { product: rule.product, reason: rule.reason };
   }
   return null;
+}
+
+export function classifyByRules(text: string): IntentClassification | null {
+  const rule = (reason: string): IntentClassification => ({
+    product: "personai",
+    confidence: 1,
+    reason,
+    source: "rule",
+  });
+
+  if (GENERAL_COMMAND_PATTERN.test(text)) return rule("comando de assistente geral");
+  if (MEMORY_COMMAND_PATTERN.test(text)) return rule("comando de exclusão de memória");
+
+  const product = matchProductByRules(text);
+  return product ? { ...product, confidence: 1, source: "rule" } : null;
 }
 
 const classificationSchema = z.object({

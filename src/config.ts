@@ -25,6 +25,20 @@ const configSchema = z.object({
     .enum(["true", "false"])
     .default("true")
     .transform((value) => value === "true"),
+
+  // PersonAI
+  PERSONAI_MODEL: z.string().default("claude-sonnet-5"),
+  PERSONAI_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(3_600),
+  PERPLEXITY_API_KEY: z.string().optional(),
+  PERPLEXITY_MODEL: z.string().default("sonar"),
+
+  // Redundância de modelo. Usa as credenciais AWS padrão do ambiente.
+  BEDROCK_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  BEDROCK_REGION: z.string().default("us-east-1"),
+  BEDROCK_MODEL: z.string().default("anthropic.claude-sonnet-5"),
 });
 
 export type Config = z.infer<typeof configSchema>;
