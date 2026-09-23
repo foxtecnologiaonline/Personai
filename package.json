@@ -1,0 +1,36 @@
+{
+  "name": "personai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Camadas compartilhadas FOX TecnologIA: Gateway WhatsApp/Roteador de Intenção e Serviço de Memória/Contexto.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx --env-file-if-exists=.env watch src/index.ts all",
+    "dev:api": "tsx --env-file-if-exists=.env watch src/index.ts api",
+    "dev:worker": "tsx --env-file-if-exists=.env watch src/index.ts worker",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/index.js all",
+    "migrate": "tsx --env-file-if-exists=.env src/db/migrate.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.0",
+    "bullmq": "^5.63.0",
+    "fastify": "^5.7.1",
+    "ioredis": "^5.9.0",
+    "pg": "^8.18.0",
+    "pino": "^9.14.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.2",
+    "@types/pg": "^8.15.6",
+    "tsx": "^4.20.7",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
