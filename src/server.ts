@@ -1,6 +1,8 @@
+import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import { registerGatewayRoutes, type GatewayRoutesOptions } from "./gateway/routes.js";
 import { registerMemoryRoutes, type MemoryRoutesOptions } from "./memory/routes.js";
+import { registerOpsRoutes, type OpsRoutesOptions } from "./ops/status.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -13,6 +15,7 @@ export interface ServerDeps {
   logger: FastifyBaseLogger;
   gateway: GatewayRoutesOptions;
   memory: MemoryRoutesOptions;
+  ops: OpsRoutesOptions;
 }
 
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
@@ -31,10 +34,16 @@ export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
     }
   });
 
+  // Limite por rota, não global: o webhook chega de poucos IPs da Meta, então
+  // limitar por IP ali descartaria mensagem legítima de tenant movimentado.
+  // Quem protege o webhook é a assinatura HMAC.
+  await app.register(rateLimit, { global: false });
+
   app.get("/health", async () => ({ status: "ok" }));
 
   await registerGatewayRoutes(app, deps.gateway);
   await registerMemoryRoutes(app, deps.memory);
+  await registerOpsRoutes(app, deps.ops);
 
   return app;
 }

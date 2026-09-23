@@ -26,6 +26,11 @@ const configSchema = z.object({
     .default("true")
     .transform((value) => value === "true"),
 
+  // Prazo de guarda (LGPD): passou disto, é apagado automaticamente.
+  MESSAGE_LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  INTERACTION_RETENTION_DAYS: z.coerce.number().int().positive().default(180),
+  RETENTION_INTERVAL_HOURS: z.coerce.number().int().positive().default(6),
+
   // PersonAI
   PERSONAI_MODEL: z.string().default("claude-sonnet-5"),
   PERSONAI_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(3_600),

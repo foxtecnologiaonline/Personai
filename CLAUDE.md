@@ -10,6 +10,8 @@ Engenheiro sênior full-stack (Tech Lead/Arquiteto de Soluções). Leva qualquer
 
 **Fase atual:** Fase 0 (camadas compartilhadas) e PersonAI v1 entregues. A ordem das fases está em `docs/00-visao-geral-e-camadas-compartilhadas.md` — consultar antes de começar produto novo.
 
+**Operação:** `npm run tenant` cadastra cliente; `GET /internal/status` é a monitoração; o worker expurga dado vencido sozinho. Rate limit é só em `/internal/*` — nunca aplicar no webhook, que recebe de poucos IPs da Meta.
+
 **Regras do PersonAI:** não executa ação em nome do usuário (comprar, agendar, pagar) — v1 é informativo. Fonte de busca externa é anexada pelo código, nunca deixada a cargo do modelo. Conversa recente só no Redis com TTL; o que dura vira fato/preferência na Camada C.
 
 **Convenções:**

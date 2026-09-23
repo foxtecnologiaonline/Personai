@@ -45,7 +45,7 @@ async function waitFor<T>(check: () => T | undefined, timeoutMs = 10_000): Promi
 describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila → worker", () => {
   const pool = createPool(DATABASE_URL!);
   const memory = new PgMemoryRepository(pool);
-  const logger = createLogger("silent");
+  const logger = createLogger(process.env["E2E_LOG"] ?? "silent");
   const sent: Array<{ to: string; text: string }> = [];
   const sender: WhatsAppSender = {
     async sendText(_phoneNumberId, to, text) {
@@ -53,6 +53,9 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
     },
   };
 
+  // Fila própria por execução: sem isto, job órfão de uma rodada interrompida
+  // é processado pela rodada seguinte e polui as asserções.
+  const queuePrefix = `test-${randomUUID().slice(0, 8)}`;
   const phoneNumberId = `PN_${randomUUID()}`;
   const waId = "5511987654321";
   let tenantId: string;
@@ -125,7 +128,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
     queueRedis = createRedis(REDIS_URL!);
     workerRedis = createRedis(REDIS_URL!);
     sessionRedis = createRedis(REDIS_URL!);
-    queue = createInboundQueue(queueRedis);
+    queue = createInboundQueue(queueRedis, queuePrefix);
 
     const personai = new PersonAiHandler({
       assistant: new PersonAiAssistant({
@@ -141,7 +144,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
     });
 
     worker = createInboundWorker(
-      { connection: workerRedis, concurrency: 2 },
+      { connection: workerRedis, concurrency: 2, prefix: queuePrefix },
       {
         pool,
         registry: new HandlerRegistry().register(personai),
@@ -164,6 +167,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
         },
       },
       memory: { memory, internalToken: INTERNAL_TOKEN },
+      ops: { internalToken: INTERNAL_TOKEN, pool, queue },
     });
     await app.ready();
   });
@@ -192,6 +196,20 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
       url: "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=errado&hub.challenge=1234",
     });
     expect(recusado.statusCode).toBe(403);
+  });
+
+  it("expõe status operacional só com token interno", async () => {
+    const semToken = await app.inject({ method: "GET", url: "/internal/status" });
+    expect(semToken.statusCode).toBe(401);
+
+    const comToken = await app.inject({
+      method: "GET",
+      url: "/internal/status",
+      headers: { "x-internal-token": INTERNAL_TOKEN },
+    });
+    expect(comToken.statusCode).toBe(200);
+    expect(comToken.json()).toMatchObject({ database: "ok" });
+    expect(comToken.json().queue).toHaveProperty("waiting");
   });
 
   it("recusa webhook com assinatura inválida", async () => {
@@ -234,7 +252,9 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
     expect(response.json()).toMatchObject({ received: 1, queued: 1 });
 
     const reply = await waitFor(() => sent.find((item) => item.to === waId));
-    expect(reply.text).toBe(REPLY);
+    expect(reply.text).toContain(REPLY);
+    // Primeiro contato: o aviso de privacidade vai junto da resposta.
+    expect(reply.text).toContain("apagar minha memória");
 
     const log = await pool.query<{ status: string; product: string }>(
       "SELECT status, product FROM inbound_message_log WHERE message_id = $1",

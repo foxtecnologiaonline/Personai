@@ -94,7 +94,7 @@ describe("PersonAiHandler", () => {
     const ctx: HandlerContext = { memory: memoryStub(), logger };
 
     const reply = await build({ products }).handle(message("qual meu saldo?"), ctx);
-    expect(reply?.text).toBe("Seu saldo é R$ 1.234,00.");
+    expect(reply?.text).toContain("Seu saldo é R$ 1.234,00.");
   });
 
   it("responde pergunta aberta e guarda o que vale lembrar", async () => {
@@ -110,7 +110,7 @@ describe("PersonAiHandler", () => {
 
     const reply = await build({ assistant }).handle(message("você me ajuda?"), ctx);
 
-    expect(reply?.text).toBe("Claro!");
+    expect(reply?.text).toContain("Claro!");
     expect(memory.rememberFact).toHaveBeenCalledWith(
       message("").tenantId,
       message("").userRef,
@@ -138,7 +138,50 @@ describe("PersonAiHandler", () => {
     });
 
     const reply = await build({ assistant }).handle(message("pergunta"), ctx);
-    expect(reply?.text).toBe("Resposta mesmo assim.");
+    expect(reply?.text).toContain("Resposta mesmo assim.");
+  });
+
+  it("dá o aviso de privacidade no primeiro contato, junto da resposta", async () => {
+    const memory = memoryStub();
+    const ctx: HandlerContext = { memory, logger };
+    const assistant = assistantStub({
+      text: "Claro!",
+      facts: [],
+      preferences: [],
+      usedSearch: false,
+      source: "claude",
+    });
+
+    const reply = await build({ assistant }).handle(message("oi"), ctx);
+
+    expect(reply?.text).toContain("apagar minha memória");
+    expect(reply?.text).toContain("Claro!");
+    expect(memory.setPreference).toHaveBeenCalledWith(
+      message("").tenantId,
+      message("").userRef,
+      "aviso_privacidade_em",
+      expect.any(String),
+    );
+  });
+
+  it("não repete o aviso para quem já recebeu", async () => {
+    const memory = memoryStub();
+    memory.getContext.mockResolvedValueOnce({
+      preferences: { aviso_privacidade_em: new Date().toISOString() },
+      facts: [],
+      interactions: [],
+    });
+    const ctx: HandlerContext = { memory, logger };
+    const assistant = assistantStub({
+      text: "Claro!",
+      facts: [],
+      preferences: [],
+      usedSearch: false,
+      source: "claude",
+    });
+
+    const reply = await build({ assistant }).handle(message("oi"), ctx);
+    expect(reply?.text).toBe("Claro!");
   });
 
   it("responde com aviso quando nenhum modelo está disponível", async () => {

@@ -36,6 +36,7 @@ export function createRedis(url: string): Redis {
   return new Redis(url, { maxRetriesPerRequest: null });
 }
 
-export function createInboundQueue(connection: Redis): Queue<InboundJob> {
-  return new Queue<InboundJob>(INBOUND_QUEUE, { connection });
+/** `prefix` isola filas que dividem o mesmo Redis (testes usam um por execução). */
+export function createInboundQueue(connection: Redis, prefix?: string): Queue<InboundJob> {
+  return new Queue<InboundJob>(INBOUND_QUEUE, { connection, ...(prefix ? { prefix } : {}) });
 }

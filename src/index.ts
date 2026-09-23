@@ -13,6 +13,7 @@ import { ProductApiRegistry } from "./personai/product-api.js";
 import { PerplexitySearch } from "./personai/search.js";
 import { RedisConversationSession } from "./personai/session.js";
 import { createInboundQueue, createRedis, inboundJobOptions } from "./queue/inbound.js";
+import { startRetentionSchedule } from "./retention.js";
 import { ClaudeIntentClassifier } from "./router/classifier.js";
 import { HandlerRegistry } from "./router/registry.js";
 import { createInboundWorker } from "./router/worker.js";
@@ -59,6 +60,7 @@ if (mode !== "worker") {
       },
     },
     memory: { memory, internalToken: config.INTERNAL_API_TOKEN },
+    ops: { internalToken: config.INTERNAL_API_TOKEN, pool, queue },
   });
 
   closers.unshift(() => app.close());
@@ -118,7 +120,22 @@ if (mode !== "api") {
     },
   );
 
-  closers.unshift(() => worker.close(), () => redis.quit(), () => sessionRedis.quit());
+  const stopRetention = startRetentionSchedule(
+    pool,
+    {
+      messageLogDays: config.MESSAGE_LOG_RETENTION_DAYS,
+      interactionDays: config.INTERACTION_RETENTION_DAYS,
+      intervalHours: config.RETENTION_INTERVAL_HOURS,
+    },
+    logger,
+  );
+
+  closers.unshift(
+    () => worker.close(),
+    () => redis.quit(),
+    () => sessionRedis.quit(),
+    async () => stopRetention(),
+  );
   logger.info({ produtos: registry.registered() }, "worker de mensagens ativo");
 }
 

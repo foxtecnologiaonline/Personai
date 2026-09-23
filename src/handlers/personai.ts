@@ -5,7 +5,9 @@ import type {
   ProductHandler,
   ProductId,
 } from "../domain/types.js";
+import type { MemoryContext } from "../memory/types.js";
 import type { PersonAiAssistant } from "../personai/assistant.js";
+import { PRIVACY_NOTICE, PRIVACY_NOTICE_KEY } from "../personai/privacy.js";
 import type { ProductApiRegistry } from "../personai/product-api.js";
 import { routePersonAiIntent } from "../personai/router.js";
 import type { ConversationSession } from "../personai/session.js";
@@ -38,15 +40,38 @@ export class PersonAiHandler implements ProductHandler {
 
   async handle(message: NormalizedMessage, ctx: HandlerContext): Promise<HandlerReply | null> {
     const route = routePersonAiIntent(message.text);
+    if (route.target.kind === "forget-memory") return this.forget(message, ctx);
 
-    switch (route.target.kind) {
-      case "forget-memory":
-        return this.forget(message, ctx);
-      case "product":
-        return this.askProduct(route.target.product, message);
-      case "general":
-        return this.converse(message, ctx);
-    }
+    // Uma leitura de memória serve aos dois caminhos e ao aviso de privacidade.
+    const memory = await ctx.memory.getContext(message.tenantId, message.userRef, {
+      factLimit: 10,
+      interactionLimit: 0,
+    });
+    const notice = await this.noticeIfFirstContact(message, ctx, memory);
+
+    const reply =
+      route.target.kind === "product"
+        ? await this.askProduct(route.target.product, message)
+        : await this.converse(message, ctx, memory);
+
+    return notice ? { ...reply, text: `${notice}\n\n${reply.text}` } : reply;
+  }
+
+  /** Vai junto da primeira resposta, não como mensagem separada. */
+  private async noticeIfFirstContact(
+    message: NormalizedMessage,
+    ctx: HandlerContext,
+    memory: MemoryContext,
+  ): Promise<string | null> {
+    if (memory.preferences[PRIVACY_NOTICE_KEY]) return null;
+
+    await ctx.memory.setPreference(
+      message.tenantId,
+      message.userRef,
+      PRIVACY_NOTICE_KEY,
+      new Date().toISOString(),
+    );
+    return PRIVACY_NOTICE;
   }
 
   private async forget(message: NormalizedMessage, ctx: HandlerContext): Promise<HandlerReply> {
@@ -85,15 +110,13 @@ export class PersonAiHandler implements ProductHandler {
     return { text: answer?.text ?? FALLBACK_REPLY };
   }
 
-  private async converse(message: NormalizedMessage, ctx: HandlerContext): Promise<HandlerReply> {
-    const [memory, history] = await Promise.all([
-      // O histórico que o assistente usa vem da sessão, não de `interactions`.
-      ctx.memory.getContext(message.tenantId, message.userRef, {
-        factLimit: 10,
-        interactionLimit: 0,
-      }),
-      this.deps.session.load(message.tenantId, message.userRef),
-    ]);
+  private async converse(
+    message: NormalizedMessage,
+    ctx: HandlerContext,
+    memory: MemoryContext,
+  ): Promise<HandlerReply> {
+    // O histórico que o assistente usa vem da sessão, não de `interactions`.
+    const history = await this.deps.session.load(message.tenantId, message.userRef);
 
     const answer = await this.deps.assistant.answer({
       question: message.text,

@@ -79,14 +79,36 @@ O teste ponta a ponta exercita webhook → fila → worker → handler → respo
 - **Entrega é at-least-once.** Se o processo cair entre enviar a resposta e marcar como processada, a retentativa reenvia. O oposto (perder a resposta) seria pior.
 - **A resposta a um pedido de exclusão não gera novo registro de memória** — apagar e logo em seguida gravar algo sobre a pessoa não seria exclusão.
 
+## Operação
+
+**Cadastro de tenant**
+
+```bash
+npm run tenant -- add --name "Cliente X" --phone-number-id 123456 [--waba-id 789]
+npm run tenant -- list
+npm run tenant -- disable --phone-number-id 123456
+```
+
+**Deploy** — `Dockerfile` multi-estágio (roda como usuário sem privilégio, com healthcheck). A imagem sobe os dois papéis: `docker run personai api` e `docker run personai worker`. O CI (`.github/workflows/ci.yml`) roda typecheck, migrações, a suíte completa contra Postgres e Redis reais, o build e o `docker build`.
+
+**Monitoração** — `GET /internal/status` (token interno) devolve estado do banco e a contagem da fila. Fila crescendo é o primeiro sinal de que mensagem de usuário está sem resposta.
+
+**Prazo de guarda** — o worker expurga automaticamente `inbound_message_log` (padrão 90 dias) e `memory.interactions` (padrão 180 dias), com trava para não duplicar entre instâncias. Configurável por env.
+
+**Rate limit** — aplicado só às rotas `/internal/*`. O webhook fica de fora de propósito: o tráfego da Meta vem de poucos IPs, e limitar por IP ali descartaria mensagem legítima de tenant movimentado. Quem protege o webhook é a assinatura HMAC.
+
 ## O que ainda falta para produção
 
-- Credenciais reais da Meta (WABA, app secret, número verificado) e webhook em URL pública HTTPS
-- Deploy: não há Dockerfile nem CI; alvo de hospedagem ainda não decidido
-- Cadastro de tenant (hoje é `INSERT` manual)
-- Mensagem proativa fora da janela de 24h da Meta exige template aprovado — não implementado
-- Aviso de privacidade na primeira interação e política de expurgo de `inbound_message_log`
-- Smoke test do adaptador da Perplexity com chave real: o mapeamento da resposta foi escrito de forma defensiva, sem acesso à doc viva
+Tudo aqui depende de credencial ou decisão que não é do código:
+
+- **Credenciais da Meta** — WABA, app secret, número verificado, token permanente, e o webhook publicado em URL HTTPS
+- **Chave Anthropic de produção** — sem ela o assistente não responde pergunta aberta
+- **Onde hospedar** — a imagem roda em qualquer lugar; falta escolher
+- **Perplexity** — chave real e smoke test: o mapeamento da resposta foi escrito de forma defensiva, sem acesso à doc viva
+- **Bedrock** — credenciais AWS e confirmação do model id na região escolhida
+- **Backup do Postgres** — depende do provedor escolhido
+- **Mensagem proativa** fora da janela de 24h da Meta exige template aprovado (não bloqueia o PersonAI, que é reativo)
+- **Avaliação de qualidade da resposta** — todos os testes usam duplo de modelo. O encanamento está provado; a qualidade da resposta, não
 
 ## Próxima fase
 
