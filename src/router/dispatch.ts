@@ -6,6 +6,7 @@ import type { MemoryApi } from "../memory/types.js";
 import type { InboundJob } from "../queue/inbound.js";
 import type { IntentClassifier } from "./classifier.js";
 import type { HandlerRegistry } from "./registry.js";
+import type { ConversationLock } from "./user-lock.js";
 
 const UNAVAILABLE_REPLY =
   "Recebi sua mensagem. Esse atendimento ainda está sendo ativado neste canal — em breve respondo por aqui.";
@@ -20,6 +21,8 @@ export interface DispatchDeps {
   memory: MemoryApi;
   sender: WhatsAppSender;
   logger: Logger;
+  /** Sem trava, mensagens seguidas do mesmo usuário se atropelam. */
+  lock?: ConversationLock;
 }
 
 export interface DispatchResult {
@@ -49,6 +52,15 @@ export async function dispatchInbound(
   job: InboundJob,
   deps: DispatchDeps,
 ): Promise<DispatchResult> {
+  const release = await deps.lock?.acquire(`${job.tenantId}:${job.userRef}`);
+  try {
+    return await handleInbound(job, deps);
+  } finally {
+    await release?.();
+  }
+}
+
+async function handleInbound(job: InboundJob, deps: DispatchDeps): Promise<DispatchResult> {
   if (!(await claim(deps.pool, job))) {
     deps.logger.debug({ messageId: job.messageId }, "mensagem já processada, ignorando reentrega");
     return { status: "duplicate" };

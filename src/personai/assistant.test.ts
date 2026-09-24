@@ -121,6 +121,27 @@ describe("PersonAiAssistant", () => {
     expect((captured["messages"] as unknown[])).toHaveLength(2);
   });
 
+  it("descarta prefixo de histórico que não comece pelo usuário", async () => {
+    let captured: Record<string, unknown> = {};
+    await assistant({
+      claude: claudeStub({ reply: "ok", facts: [], preferences: [] }, (p) => {
+        captured = p;
+      }),
+    }).answer({
+      question: "e agora?",
+      memory: emptyMemory,
+      history: [
+        { role: "assistant", text: "resposta órfã" },
+        { role: "user", text: "pergunta" },
+        { role: "assistant", text: "resposta" },
+      ],
+    });
+
+    const messages = captured["messages"] as Array<{ role: string; content: string }>;
+    expect(messages[0]).toMatchObject({ role: "user", content: "pergunta" });
+    expect(messages).toHaveLength(3);
+  });
+
   it("cai para o modelo de redundância quando o primário falha", async () => {
     const answer = await assistant({
       claude: claudeStub(new Error("503 indisponível")),

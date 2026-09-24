@@ -16,10 +16,16 @@ export interface ServerDeps {
   gateway: GatewayRoutesOptions;
   memory: MemoryRoutesOptions;
   ops: OpsRoutesOptions;
+  /** Ligar apenas quando houver proxy confiável na frente. */
+  trustProxy?: boolean;
 }
 
 export async function buildServer(deps: ServerDeps): Promise<FastifyInstance> {
-  const app = Fastify({ loggerInstance: deps.logger, bodyLimit: 1_048_576, trustProxy: true });
+  const app = Fastify({
+    loggerInstance: deps.logger,
+    bodyLimit: 1_048_576,
+    trustProxy: deps.trustProxy ?? false,
+  });
 
   // A assinatura é sobre os bytes exatos: preservar o corpo bruto antes do parse.
   app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {

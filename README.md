@@ -76,6 +76,7 @@ O teste ponta a ponta exercita webhook → fila → worker → handler → respo
 - **O telefone do usuário não é persistido.** Tudo que vai para o banco usa `user_ref`, um HMAC de `tenant + wa_id` (`USER_REF_SECRET`). Trocar essa chave torna a memória existente inalcançável.
 - **`inbound_message_log` guarda roteamento, nunca conteúdo.** Serve de idempotência durável e de auditoria, sem virar um arquivo de conversas.
 - **Reentrega processada é ignorada; retentativa de falha não.** A reivindicação da mensagem só bloqueia o que já foi respondido — senão uma falha de envio deixaria a mensagem sem resposta para sempre.
+- **Uma conversa por vez.** Mensagens seguidas do mesmo usuário são serializadas por uma trava no Redis (com expiração). Sem ela, duas mensagens em sequência caem em workers diferentes, leem o mesmo estado e respondem em cima uma da outra — o usuário recebe o aviso de privacidade duas vezes. A espera tem teto: passado o limite, segue mesmo assim, porque não responder é pior que responder fora de ordem.
 - **Entrega é at-least-once.** Se o processo cair entre enviar a resposta e marcar como processada, a retentativa reenvia. O oposto (perder a resposta) seria pior.
 - **A resposta a um pedido de exclusão não gera novo registro de memória** — apagar e logo em seguida gravar algo sobre a pessoa não seria exclusão.
 
@@ -89,7 +90,9 @@ npm run tenant -- list
 npm run tenant -- disable --phone-number-id 123456
 ```
 
-**Deploy** — `Dockerfile` multi-estágio (roda como usuário sem privilégio, com healthcheck). A imagem sobe os dois papéis: `docker run personai api` e `docker run personai worker`. O CI (`.github/workflows/ci.yml`) roda typecheck, migrações, a suíte completa contra Postgres e Redis reais, o build e o `docker build`.
+**Deploy** — `Dockerfile` multi-estágio, rodando como usuário sem privilégio. A imagem sobe os dois papéis: `docker run personai api` e `docker run personai worker`. Dentro do container as tarefas operacionais rodam do build (`npm run migrate:prod`, `npm run tenant:prod`) — a imagem de produção não traz `tsx`. Não há `HEALTHCHECK` embutido de propósito: o worker não sobe servidor HTTP, então quem roda o papel `api` define o check (`GET /health`) no orquestrador. O CI (`.github/workflows/ci.yml`) roda typecheck, migrações, a suíte completa contra Postgres e Redis reais, o build e o `docker build`.
+
+**Atrás de proxy** — `TRUST_PROXY=true` só quando houver um proxy confiável na frente. Ligado sem isso, o IP do cliente passa a vir do `X-Forwarded-For`, que qualquer um forja.
 
 **Monitoração** — `GET /internal/status` (token interno) devolve estado do banco e a contagem da fila. Fila crescendo é o primeiro sinal de que mensagem de usuário está sem resposta.
 

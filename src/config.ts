@@ -5,6 +5,12 @@ const configSchema = z.object({
   HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().int().positive().default(3000),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+  // Só ligar atrás de proxy confiável: com isto, o IP do cliente vem do
+  // X-Forwarded-For, que qualquer um forja se a requisição chega direto.
+  TRUST_PROXY: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),

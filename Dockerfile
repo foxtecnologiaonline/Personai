@@ -24,8 +24,10 @@ COPY package.json ./
 USER node
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
-  CMD wget -qO- http://127.0.0.1:3000/health || exit 1
+# Sem HEALTHCHECK na imagem: ela serve os dois papéis, e o worker não sobe
+# servidor HTTP — um check em /health marcaria todo worker como não saudável.
+# Quem roda o papel "api" define o check (GET /health) no orquestrador.
 
+# Migração no container: npm run migrate:prod (a imagem não tem tsx).
 # api e worker escalam separados: sobrescreva o comando com "api" ou "worker".
 CMD ["node", "dist/index.js", "all"]

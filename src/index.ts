@@ -16,6 +16,7 @@ import { createInboundQueue, createRedis, inboundJobOptions } from "./queue/inbo
 import { startRetentionSchedule } from "./retention.js";
 import { ClaudeIntentClassifier } from "./router/classifier.js";
 import { HandlerRegistry } from "./router/registry.js";
+import { RedisConversationLock } from "./router/user-lock.js";
 import { createInboundWorker } from "./router/worker.js";
 import { buildServer } from "./server.js";
 
@@ -50,6 +51,7 @@ if (mode !== "worker") {
 
   const app = await buildServer({
     logger,
+    trustProxy: config.TRUST_PROXY,
     gateway: {
       verifyToken: config.WHATSAPP_VERIFY_TOKEN,
       appSecret: config.WHATSAPP_APP_SECRET,
@@ -112,6 +114,7 @@ if (mode !== "api") {
         logger,
       }),
       memory,
+      lock: new RedisConversationLock(sessionRedis),
       sender: new GraphWhatsAppSender({
         accessToken: config.WHATSAPP_ACCESS_TOKEN,
         graphVersion: config.WHATSAPP_GRAPH_VERSION,

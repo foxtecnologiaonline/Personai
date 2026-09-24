@@ -17,6 +17,7 @@ import { ProductApiRegistry } from "./personai/product-api.js";
 import { RedisConversationSession } from "./personai/session.js";
 import { createInboundQueue, createRedis, inboundJobOptions, type InboundJob } from "./queue/inbound.js";
 import { ClaudeIntentClassifier } from "./router/classifier.js";
+import { RedisConversationLock } from "./router/user-lock.js";
 import { HandlerRegistry } from "./router/registry.js";
 import { createInboundWorker } from "./router/worker.js";
 import { buildServer } from "./server.js";
@@ -90,7 +91,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
     });
   };
 
-  const textMessage = (messageId: string, text: string) => ({
+  const textMessage = (messageId: string, text: string, from: string = waId) => ({
     object: "whatsapp_business_account",
     entry: [
       {
@@ -100,10 +101,10 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
             field: "messages",
             value: {
               metadata: { phone_number_id: phoneNumberId },
-              contacts: [{ profile: { name: "Ana" }, wa_id: waId }],
+              contacts: [{ profile: { name: "Ana" }, wa_id: from }],
               messages: [
                 {
-                  from: waId,
+                  from,
                   id: messageId,
                   timestamp: "1700000000",
                   type: "text",
@@ -150,6 +151,7 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
         registry: new HandlerRegistry().register(personai),
         classifier: new ClaudeIntentClassifier({ client: null, model: "claude-sonnet-5", logger }),
         memory,
+        lock: new RedisConversationLock(sessionRedis, { pollMs: 25 }),
         sender,
         logger,
       },
@@ -269,16 +271,40 @@ describe.skipIf(!DATABASE_URL || !REDIS_URL)("ponta a ponta: webhook → fila �
   });
 
 
-  it("não responde duas vezes a mesma mensagem reentregue", { timeout: 20_000 }, async () => {
-    const messageId = `wamid.${randomUUID()}`;
-    await postWebhook(textMessage(messageId, "oi, tudo bem?"));
-    await waitFor(() => (sent.length >= 2 ? sent.length : undefined));
+  it(
+    "não atropela mensagens seguidas do mesmo usuário",
+    { timeout: 20_000 },
+    async () => {
+      const outroWaId = "5511900000042";
+      await Promise.all([
+        postWebhook(textMessage(`wamid.${randomUUID()}`, "oi", outroWaId)),
+        postWebhook(textMessage(`wamid.${randomUUID()}`, "e aí, tudo bem?", outroWaId)),
+      ]);
 
-    const antes = sent.length;
-    await postWebhook(textMessage(messageId, "oi, tudo bem?"));
+      const respostas = await waitFor(() => {
+        const items = sent.filter((item) => item.to === outroWaId);
+        return items.length >= 2 ? items : undefined;
+      });
+
+      // Sem serialização por usuário, as duas leem memória vazia e as duas avisam.
+      const comAviso = respostas.filter((item) => item.text.includes("apagar minha memória"));
+      expect(comAviso).toHaveLength(1);
+    },
+  );
+
+  it("não responde duas vezes a mesma mensagem reentregue", { timeout: 20_000 }, async () => {
+    // Usuário próprio: contar envios globais tornaria o teste refém da ordem.
+    const reentregaWaId = "5511900000077";
+    const respostas = () => sent.filter((item) => item.to === reentregaWaId);
+    const messageId = `wamid.${randomUUID()}`;
+
+    await postWebhook(textMessage(messageId, "oi, tudo bem?", reentregaWaId));
+    await waitFor(() => (respostas().length >= 1 ? true : undefined));
+
+    await postWebhook(textMessage(messageId, "oi, tudo bem?", reentregaWaId));
     await new Promise((resolve) => setTimeout(resolve, 1_000));
 
-    expect(sent.length).toBe(antes);
+    expect(respostas()).toHaveLength(1);
   });
 
   it(

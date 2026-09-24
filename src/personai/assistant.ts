@@ -63,7 +63,7 @@ export class PersonAiAssistant {
     const research = this.deps.search ? await this.deps.search.search(request.question) : null;
     const prompt = buildUserPrompt(request, research?.text);
     const system = buildSystem(request.memory);
-    const history = request.history.map((turn) => ({
+    const history = fromFirstUserTurn(request.history).map((turn) => ({
       role: turn.role,
       content: turn.text,
     })) satisfies Array<{ role: "user" | "assistant"; content: string }>;
@@ -150,6 +150,16 @@ export class PersonAiAssistant {
       return null;
     }
   }
+}
+
+/**
+ * A API recusa conversa que não comece por turno do usuário. Hoje os turnos são
+ * gravados em pares, mas um corte de histórico em posição ímpar bastaria para
+ * derrubar a resposta — descartar o prefixo é mais barato que o 400.
+ */
+function fromFirstUserTurn(turns: ConversationTurn[]): ConversationTurn[] {
+  const start = turns.findIndex((turn) => turn.role === "user");
+  return start === -1 ? [] : turns.slice(start);
 }
 
 function buildSystem(memory: MemoryContext): string {
