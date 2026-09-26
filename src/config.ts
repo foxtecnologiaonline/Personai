@@ -40,6 +40,10 @@ const configSchema = z.object({
   // PersonAI
   PERSONAI_MODEL: z.string().default("claude-sonnet-5"),
   PERSONAI_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(3_600),
+  // Teto por chamada de modelo. Sem isto, o SDK espera até 10 min (com retry,
+  // ainda mais) antes de falhar — o fallback do Bedrock nunca chegaria a
+  // tempo de valer a pena numa conversa de WhatsApp.
+  PERSONAI_MODEL_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   PERPLEXITY_API_KEY: z.string().optional(),
   PERPLEXITY_MODEL: z.string().default("sonar"),
 

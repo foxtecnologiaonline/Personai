@@ -35,7 +35,7 @@ const memory = new PgMemoryRepository(pool);
 const closers: Array<() => Promise<unknown>> = [() => pool.end()];
 
 const anthropic = config.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: config.ANTHROPIC_API_KEY })
+  ? new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, timeout: config.PERSONAI_MODEL_TIMEOUT_MS })
   : null;
 
 if (!anthropic) {
@@ -78,7 +78,10 @@ if (mode !== "api") {
   const assistant = new PersonAiAssistant({
     claude: anthropic,
     bedrock: config.BEDROCK_ENABLED
-      ? new AnthropicBedrockMantle({ awsRegion: config.BEDROCK_REGION })
+      ? new AnthropicBedrockMantle({
+          awsRegion: config.BEDROCK_REGION,
+          timeout: config.PERSONAI_MODEL_TIMEOUT_MS,
+        })
       : null,
     model: config.PERSONAI_MODEL,
     bedrockModel: config.BEDROCK_MODEL,

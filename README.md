@@ -27,7 +27,7 @@ Este repositório carrega as specs de arquitetura (`docs/`) e a implementação 
 - Responde pergunta aberta com Claude, usando preferências e fatos do Serviço de Memória como contexto.
 - Roteamento secundário próprio: pedido de exclusão, pergunta sobre produto FOX (vai para a API interna do produto) ou pergunta aberta. Medido em 30 casos rotulados — o critério da spec é ≥ 90% de acerto.
 - Busca fundamentada para pergunta aberta, com **fonte citada pelo código**, não pelo modelo: citação é requisito, não pode depender de o modelo lembrar.
-- Fallback de modelo via Amazon Bedrock quando o primário falha (responde sem extrair memória — perder um fato é melhor que ficar sem resposta).
+- Fallback de modelo via Amazon Bedrock quando o primário falha (responde sem extrair memória — perder um fato é melhor que ficar sem resposta). Chamada a modelo tem teto de 30s (`PERSONAI_MODEL_TIMEOUT_MS`): sem isso, o SDK espera até 10 minutos antes de declarar falha, e o fallback nunca chegaria a tempo de valer a pena.
 - Conversa recente vive só no Redis com TTL; o que merece durar vira fato ou preferência no Serviço de Memória. `"apagar minha memória"` limpa os dois.
 - **Não executa ações** (comprar, agendar, pagar): não recebe ferramenta que aja, e o prompt reforça.
 
